@@ -77,3 +77,7 @@ new_line
 
 c_yellow "Files we don't own but can write to"
 find / -type f -writable ! -user $(whoami) 2>/dev/null
+new_line
+
+c_red "Running Services"
+ss -nltu
