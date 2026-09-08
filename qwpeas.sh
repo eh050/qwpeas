@@ -1,83 +1,128 @@
-#!/bin/bash
+#!/usr/bin/env bash
+#
+# linenum.sh — quick Linux local enumeration checklist runner.
+# Prints findings to stdout; intended for interactive use on a foothold.
+#
+# Usage:
+#   ./linenum.sh
+#   ./linenum.sh | tee enum-$(hostname)-$(date +%Y%m%d).txt
 
-# Define color variables
-RED='\033[0;31m'
-YELLOW='\033[1;33m'
-NC='\033[0m'       # No Color (Reset)
+set -u
 
-function new_line() {
-    echo ""
-}
+# =============================================================================
+# Output helpers
+# =============================================================================
+if [[ -t 1 && -z "${NO_COLOR:-}" ]]; then
+  RED='\033[0;31m'
+  YELLOW='\033[1;33m'
+  NC='\033[0m'
+else
+  RED='' YELLOW='' NC=''
+fi
 
-function c_red() {
-    echo -e "${RED}===[$1]===${NC}"
-}
+section() { printf '\n%b===[%s]===%b\n' "$RED" "$1" "$NC"; }
+item()    { printf '%b%s%b\n' "$YELLOW" "$1" "$NC"; }
+nl()      { printf '\n'; }
 
-function c_yellow() {
-    echo -e "${YELLOW}$1${NC}"
-}
+# =============================================================================
+# Worth checking (manual — not automated below)
+# =============================================================================
+section "Worth Checking but Not Covered"
+item "Check for sudo -l"
+item "Check for NFS no_root_squash"
+item "Check for TMUX session hijacking"
+item "Check history for previous commands run by user"
+item "Check memory and cache (mimipenguin, LaZagne, firefox_decrypt, etc.)"
+nl
 
-c_red "Worth Checking but Not Covered"
-c_yellow "Check for sudo -l"
-c_yellow "Check for NFS no_root_squash"
-c_yellow "Check for TMUX session hijacking"
-c_yellow "Check history for previous commands run by user"
-c_yellow "Check memory and cache information (mimipenguin, LaZagne, FFoxDecrypt, etc"
-new_line
+# =============================================================================
+# General
+# =============================================================================
+section "General"
+item "Kernel version"
+uname -a
+nl
 
-c_red "General"
-c_yellow "Kenerl Version"
-uname -a 
-new_line
-
-c_red "User Permissions"
+# =============================================================================
+# User / home / auth files
+# =============================================================================
+section "User Permissions"
 id
-new_line
+nl
 
-c_yello "Home Folder"
+section "Home Folder"
 ls -al ~/
-new_line
+nl
 
-c_yellow "passwd, shadow, & opasswd"
-ls -l /etc/passwd
-ls -l /etc/shadow
-ls -l /etc/security/opasswd
-new_line
+section "passwd, shadow, & opasswd"
+ls -l /etc/passwd /etc/shadow /etc/security/opasswd 2>/dev/null
+nl
 
-c_red "File System"
-c_yellow "SUID & GUID bits"
+# =============================================================================
+# File system
+# =============================================================================
+section "File System"
+
+item "SUID bits (root-owned)"
 find / -user root -perm -4000 -exec ls -ldb {} \; 2>/dev/null
+nl
+
+item "SGID bits (root-owned)"
 find / -user root -perm -6000 -exec ls -ldb {} \; 2>/dev/null
-new_line
+nl
 
-c_yellow "History Files"
-find / -type f \( -name *_hist -o -name *_history \) -exec ls -l {} \; 2>/dev/null
-new_line
+item "History files"
+find / -type f \( -name '*_hist' -o -name '*_history' \) -exec ls -l {} \; 2>/dev/null
+nl
 
-c_yellow "Database Files"
-for l in $(echo ".sql .db .*db .db*");do echo -e "\nDB File extension: " $l; find / -name *$l 2>/dev/null | grep -v "doc\|lib\|headers\|share\|man";done
-new_line
+item "Database files"
+for ext in .sql .db '.*db' '.db*'; do
+  printf '\nDB file pattern: %s\n' "$ext"
+  find / -name "*${ext}" 2>/dev/null \
+    | grep -Ev 'doc|lib|headers|share|man' || true
+done
+nl
 
-c_yellow "TXT Files"
-find /home/* -type f -name "*.txt" -o ! -name "*.*"
-new_line
+item "TXT / extensionless files under /home"
+find /home/* -type f \( -name '*.txt' -o ! -name '*.*' \) 2>/dev/null
+nl
 
-c_yellow "Scripts"
-for l in $(echo ".py .pyc .pl .go .jar .c .sh");do echo -e "\nFile extension: " $l; find / -name *$l 2>/dev/null | grep -v "doc\|lib\|headers\|share";done
-new_line
+item "Scripts / source"
+for ext in .py .pyc .pl .go .jar .c .sh; do
+  printf '\nFile extension: %s\n' "$ext"
+  find / -name "*${ext}" 2>/dev/null \
+    | grep -Ev 'doc|lib|headers|share' || true
+done
+nl
 
-c_yellow "Logs with Sensitive Information"
-for i in $(ls /var/log/* 2>/dev/null);do GREP=$(grep "accepted\|session opened\|session closed\|failure\|failed\|ssh\|password changed\|new user\|delete user\|sudo\|COMMAND\=\|logs" $i 2>/dev/null); if [[ $GREP ]];then echo -e "\n#### Log file: " $i; grep "accepted\|session opened\|session closed\|failure\|failed\|ssh\|password changed\|new user\|delete user\|sudo\|COMMAND\=\|logs" $i 2>/dev/null;fi;done
-new_line
+item "Logs with sensitive information"
+shopt -s nullglob
+for log in /var/log/*; do
+  [[ -f "$log" && -r "$log" ]] || continue
+  if grep -Eq 'accepted|session opened|session closed|failure|failed|ssh|password changed|new user|delete user|sudo|COMMAND=|logs' "$log" 2>/dev/null; then
+    printf '\n#### Log file: %s\n' "$log"
+    grep -E 'accepted|session opened|session closed|failure|failed|ssh|password changed|new user|delete user|sudo|COMMAND=|logs' "$log" 2>/dev/null || true
+  fi
+done
+shopt -u nullglob
+nl
 
-c_yellow "Configuration Files"
-find / ! -path "*/proc/*" -iname "*config*" -type f 2>/dev/null
-for l in $(echo ".conf .config .cnf");do echo -e "\nFile extension: " $l; find / ! -path "*proc*" -name *$l 2>/dev/null | grep -v "lib\|fonts\|share\|core" ;done
-new_line
+item "Configuration files"
+find / ! -path '*/proc/*' -iname '*config*' -type f 2>/dev/null
+for ext in .conf .config .cnf; do
+  printf '\nFile extension: %s\n' "$ext"
+  find / ! -path '*proc*' -name "*${ext}" 2>/dev/null \
+    | grep -Ev 'lib|fonts|share|core' || true
+done
+nl
 
-c_yellow "Files we don't own but can write to"
-find / -type f -writable ! -user $(whoami) 2>/dev/null
-new_line
+item "Files we don't own but can write to"
+find / -type f -writable ! -user "$(whoami)" 2>/dev/null
+nl
 
-c_red "Running Services"
+# =============================================================================
+# Network / services
+# =============================================================================
+section "Running Services"
 ss -nltu
+nl
