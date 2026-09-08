@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 #
-# linenum.sh — quick Linux local enumeration checklist runner.
+# qwpeas.sh — quick Linux local enumeration checklist runner.
 # Prints findings to stdout; intended for interactive use on a foothold.
 #
 # Usage:
-#   ./linenum.sh
-#   ./linenum.sh | tee enum-$(hostname)-$(date +%Y%m%d).txt
+#   ./qwpeas.sh
+#   ./qwpeas.sh | tee enum-$(hostname)-$(date +%Y%m%d).txt
 
 set -u
 
